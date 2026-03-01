@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader
 from model import ClinicalBERTClassifier
 import torch
 import torch.nn as nn
+from torch.optim import AdamW
+from train_utils import train_one_epoch, evaluate
 
 def format_text(finding, report):
     return f"FINDING {finding} [SEP] REPORT: {report}"
@@ -60,8 +62,8 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
 
-    train_dataset = CXRTextDataset(train_samples, tokenizer)
-    val_dataset = CXRTextDataset(val_samples, tokenizer)
+    train_dataset = CXRTextDataset(train_samples, tokenizer, max_length=128)
+    val_dataset = CXRTextDataset(val_samples, tokenizer, max_length=128)
 
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
@@ -70,16 +72,15 @@ def main():
     model = ClinicalBERTClassifier(num_classess=3).to(device=device)
 
     criterion = nn.CrossEntropyLoss()
+    optimizer = AdamW(model.parameters(), lr=2e-5)
 
-    batch = next(iter(train_loader))
-    input_ids = batch["input_ids"].to(device)
-    attention_mask = batch["attention_mask"].to(device)
-    labels = batch["labels"].to(device)
+    epochs = 1
 
-    logits = model(input_ids=input_ids, attention_mask=attention_mask)
+    for epoch in range(epochs):
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        val_acc = evaluate(model, val_loader, device)
+        print(f"Epoch {epoch+1} | Train loss: {train_loss:.4f} | Val acc: {val_acc:.4f}")
 
-    print("logit: ", logits)
-    loss = criterion(logits,labels)
-    print("loss: ", loss.item())
+
 
 main()

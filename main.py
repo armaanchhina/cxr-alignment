@@ -7,7 +7,7 @@ from model import ClinicalBERTClassifier
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
-from train_utils import train_one_epoch, evaluate
+from train_utils import train_one_epoch, evaluate, evaluate_metrics
 
 def format_text(finding, report):
     return f"FINDING {finding} [SEP] REPORT: {report}"
@@ -62,8 +62,8 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
 
-    train_dataset = CXRTextDataset(train_samples, tokenizer, max_length=128)
-    val_dataset = CXRTextDataset(val_samples, tokenizer, max_length=128)
+    train_dataset = CXRTextDataset(train_samples, tokenizer, max_length=64)
+    val_dataset = CXRTextDataset(val_samples, tokenizer, max_length=64)
 
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
@@ -74,13 +74,22 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = AdamW(model.parameters(), lr=2e-5)
 
-    epochs = 1
+    epochs = 20
 
     for epoch in range(epochs):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
-        val_acc = evaluate(model, val_loader, device)
-        print(f"Epoch {epoch+1} | Train loss: {train_loss:.4f} | Val acc: {val_acc:.4f}")
+        # val_acc = evaluate(model, val_loader, device)
+        # print(f"Epoch {epoch+1} | Train loss: {train_loss:.4f} | Val acc: {val_acc:.4f}")
 
+        val_acc, macro_f1, conf, precs, recs, f1s = evaluate_metrics(model, val_loader, device)
+
+        print(f"Epoch {epoch+1} | Train loss: {train_loss:.4f} | Val acc: {val_acc:.4f} | Macro F1: {macro_f1:.4f}")
+        print("Confusion matrix (rows=true, cols=pred):")
+        print(conf)
+
+        print("Per-class metrics (0=present, 1=negated, 2=omitted):")
+        for c in range(3):
+            print(f"  class {c}: P={precs[c]:.3f} R={recs[c]:.3f} F1={f1s[c]:.3f}")
 
 
 main()

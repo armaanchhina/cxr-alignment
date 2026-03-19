@@ -10,16 +10,6 @@ class CXRMultimodalDataset(Dataset):
         self.transform = transform
         self.max_length = max_length
 
-        for item in samples:
-            report_id = item["id"]
-            image_path = os.path.join("images", f"{report_id}.jpg")
-
-            if os.path.exists(image_path):
-                self.samples.append({
-                    "id": report_id,
-                    "report": item["report"],
-                    "image_path": image_path
-                })
     def __len__(self):
         return len(self.ids)
     

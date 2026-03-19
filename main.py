@@ -1,16 +1,15 @@
 import json
 from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer
-from cxr_dataset import CXRTextDataset
 from torch.utils.data import DataLoader
-from model import ClinicalBERTClassifier
+from torchvision import transforms
 import torch
-import torch.nn as nn
 from torch.optim import AdamW
-from train_utils import train_one_epoch, evaluate, evaluate_metrics
+import os
+from cxr_dataset import CXRMultimodalDataset
+from model import MultimodalCXRModel
+from train_utils import train_one_epoch_retrieval, evaluate_retrieval
 
-def format_text(finding, report):
-    return f"FINDING {finding} [SEP] REPORT: {report}"
 
 def load_file():
     with open("cxr-align.json", "r") as f:
@@ -18,43 +17,33 @@ def load_file():
     return raw_data
 
 
-def label_data(data: dict):
+def build_paired_samples(data: dict, images_root="images"):
     samples = []
-    cases = data['mimic']
-    print(len(cases.keys()))
-    for case_id, case in cases.items():
-        chosen = case["chosen"]
+    cases = data["mimic"]
 
-        samples.append({
-            "text": format_text(chosen, case["report"]),
-            "label": 0 
-        })
+    for report_id, case in cases.items():
+        image_path = os.path.join("images", f"{report_id}.jpg")
 
-        samples.append({
-            "text": format_text(chosen, case["negation"]),
-            "label": 1
-        })
-
-        samples.append({
-            "text": format_text(chosen, case["omitted"]),
-            "label": 2
-        })
+        if os.path.exists(image_path):
+            samples.append({
+                "id": report_id,
+                "report": case["report"],
+                "image_path": image_path
+            })
 
     return samples
 
 
-
 def main():
     raw_data = load_file()
-    samples = label_data(raw_data)
-    
-    print("Total Samples: ", len(samples))
+    samples = build_paired_samples(raw_data)
+
+    print("Total paired samples:", len(samples))
 
     train_samples, val_samples = train_test_split(
         samples,
         test_size=0.2,
         random_state=42,
-        stratify=[s["label"] for s in samples] # keeps the label proportions same
     )
 
     print(f"Train size: {len(train_samples)}")
@@ -62,34 +51,52 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
 
-    train_dataset = CXRTextDataset(train_samples, tokenizer, max_length=64)
-    val_dataset = CXRTextDataset(val_samples, tokenizer, max_length=64)
+    image_transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+
+    train_dataset = CXRMultimodalDataset(
+        samples=train_samples,
+        tokenizer=tokenizer,
+        transform=image_transform,
+        max_length=128
+    )
+
+    val_dataset = CXRMultimodalDataset(
+        samples=val_samples,
+        tokenizer=tokenizer,
+        transform=image_transform,
+        max_length=128
+    )
+
+    print(f"Train dataset size after image check: {len(train_dataset)}")
+    print(f"Val dataset size after image check: {len(val_dataset)}")
 
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ClinicalBERTClassifier(num_classess=3).to(device=device)
+    model = MultimodalCXRModel().to(device)
 
-    criterion = nn.CrossEntropyLoss()
     optimizer = AdamW(model.parameters(), lr=2e-5)
 
-    epochs = 20
+    epochs = 5
 
     for epoch in range(epochs):
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
-        # val_acc = evaluate(model, val_loader, device)
-        # print(f"Epoch {epoch+1} | Train loss: {train_loss:.4f} | Val acc: {val_acc:.4f}")
+        train_loss = train_one_epoch_retrieval(model, train_loader, optimizer, device)
+        recall_at_1, recall_at_5 = evaluate_retrieval(model, val_loader, device)
 
-        val_acc, macro_f1, conf, precs, recs, f1s = evaluate_metrics(model, val_loader, device)
-
-        print(f"Epoch {epoch+1} | Train loss: {train_loss:.4f} | Val acc: {val_acc:.4f} | Macro F1: {macro_f1:.4f}")
-        print("Confusion matrix (rows=true, cols=pred):")
-        print(conf)
-
-        print("Per-class metrics (0=present, 1=negated, 2=omitted):")
-        for c in range(3):
-            print(f"  class {c}: P={precs[c]:.3f} R={recs[c]:.3f} F1={f1s[c]:.3f}")
+        print(
+            f"Epoch {epoch+1} | "
+            f"Train loss: {train_loss:.4f} | "
+            f"R@1: {recall_at_1:.4f} | "
+            f"R@5: {recall_at_5:.4f}"
+        )
 
 
 main()

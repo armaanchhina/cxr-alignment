@@ -9,6 +9,9 @@ This project uses data from PhysioNet. You must have approved access before runn
 Dataset link:  
 https://physionet.org/content/cxr-align/1.0.0/
 
+IMAGE_FILENAMES link:
+https://physionet.org/content/mimic-cxr-jpg/2.1.0/
+
 You may also need access to MIMIC-CXR-JPG for downloading images.
 
 After you have access, export your PhysioNet username:

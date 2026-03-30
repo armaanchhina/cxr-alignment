@@ -4,6 +4,17 @@ This project trains a multimodal model to align chest X-ray images with radiolog
 
 ## Setup
 
+1. Create and activate a virtual environment
+```bash
+python -m venv venv
+source venv/bin/activate        # Mac/Linux
+venv\Scripts\activate           # Windows
+```
+2. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
 This project uses data from PhysioNet. You must have approved access before running anything.
 
 Dataset link:  

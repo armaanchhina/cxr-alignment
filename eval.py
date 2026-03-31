@@ -16,7 +16,7 @@ from src.training.train_utils import evaluate_retrieval
 
 DATA_PATH = "cxr-align.json"
 IMAGE_ROOT = "images"
-CHECKPOINT_PATH = Path("outputs/checkpoints/best_model.pt")
+CHECKPOINT_PATH = Path("outputs/best_model.pt")
 RESULTS_PATH = Path("outputs/results/final_metrics.json")
 
 

@@ -36,7 +36,7 @@ LR_TEXT_ENCODER = 5e-6
 LR_IMAGE_ENCODER = 1e-5
 RANDOM_STATE = 42
 VAL_SIZE = 0.2
-USE_FINDING_AWARE_LOSS = False
+USE_FINDING_AWARE_LOSS = True
 
 
 def setup_logging(log_path: Path) -> None:

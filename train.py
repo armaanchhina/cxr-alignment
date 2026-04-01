@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
+import logging
 from pathlib import Path
-from typing import List, Dict
 
 import torch
 from torch.optim import AdamW
@@ -13,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer, get_cosine_schedule_with_warmup
 
 from src.data.cxr_dataset import CXRMultimodalDataset
+from src.data.io import load_data, build_samples, save_metrics
 from src.models.model import MultimodalCXRModel
 from src.training.train_utils import train_one_epoch, evaluate_retrieval
 
@@ -21,32 +21,55 @@ DATA_PATH = "cxr-align.json"
 IMAGE_ROOT = "images"
 OUTPUT_DIR = Path("outputs")
 CHECKPOINT_PATH = OUTPUT_DIR / "best_model.pt"
+LOG_PATH = OUTPUT_DIR / "train.log"
+CONFIG_PATH = OUTPUT_DIR / "config.json"
+
+BATCH_SIZE = 64
+EPOCHS = 50
+PATIENCE = 8
+MAX_LENGTH = 128
+EMBEDDING_DIM = 512
+WARMUP_FRACTION = 0.05
+WEIGHT_DECAY = 0.01
+LR_PROJECTION = 1e-3
+LR_TEXT_ENCODER = 5e-6
+LR_IMAGE_ENCODER = 1e-5
+RANDOM_STATE = 42
+VAL_SIZE = 0.2
 
 
-def load_data(path: str) -> Dict:
-    with open(path, "r") as f:
-        return json.load(f)
+def setup_logging(log_path: Path) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(log_path),
+        ],
+    )
 
 
-def build_samples(data: Dict, image_root: str) -> List[Dict]:
-    samples = []
-    cases = data["mimic"]
-
-    for report_id, case in cases.items():
-        image_path = os.path.join(image_root, f"{report_id}.jpg")
-
-        if os.path.exists(image_path):
-            samples.append({
-                "id": report_id,
-                "report_text": case["report"],
-                "image_path": image_path,
-                "finding": case["chosen"],
-                "negation_text": case["negation"],
-                "omitted_text": case["omitted"],
-                "location": case["location"],
-            })
-
-    return samples
+def save_config(path: Path) -> None:
+    config = {
+        "data_path": DATA_PATH,
+        "image_root": IMAGE_ROOT,
+        "batch_size": BATCH_SIZE,
+        "epochs": EPOCHS,
+        "patience": PATIENCE,
+        "max_length": MAX_LENGTH,
+        "embedding_dim": EMBEDDING_DIM,
+        "warmup_fraction": WARMUP_FRACTION,
+        "weight_decay": WEIGHT_DECAY,
+        "lr_projection": LR_PROJECTION,
+        "lr_text_encoder": LR_TEXT_ENCODER,
+        "lr_image_encoder": LR_IMAGE_ENCODER,
+        "random_state": RANDOM_STATE,
+        "val_size": VAL_SIZE,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(config, f, indent=2)
 
 
 def get_transforms():
@@ -74,27 +97,23 @@ def get_transforms():
     return train_transform, val_transform
 
 
-def save_metrics(metrics: Dict, path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(metrics, f, indent=2)
-
-
 def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
+    setup_logging(LOG_PATH)
+    save_config(CONFIG_PATH)
 
     raw_data = load_data(DATA_PATH)
     samples = build_samples(raw_data, IMAGE_ROOT)
 
-    print(f"Total samples: {len(samples)}")
+    logging.info(f"Total samples: {len(samples)}")
 
     train_samples, val_samples = train_test_split(
         samples,
-        test_size=0.2,
-        random_state=42,
+        test_size=VAL_SIZE,
+        random_state=RANDOM_STATE,
     )
 
-    print(f"Train: {len(train_samples)} | Val: {len(val_samples)}")
+    logging.info(f"Train: {len(train_samples)} | Val: {len(val_samples)}")
 
     tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
 
@@ -104,32 +123,33 @@ def main():
         samples=train_samples,
         tokenizer=tokenizer,
         transform=train_transform,
-        max_length=128,
+        max_length=MAX_LENGTH,
     )
 
     val_dataset = CXRMultimodalDataset(
         samples=val_samples,
         tokenizer=tokenizer,
         transform=val_transform,
-        max_length=128,
+        max_length=MAX_LENGTH,
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = MultimodalCXRModel().to(device)
+    logging.info(f"Using device: {device}")
+
+    model = MultimodalCXRModel(embedding_dim=EMBEDDING_DIM).to(device)
 
     optimizer = AdamW([
-        {"params": model.text_projection.parameters(), "lr": 1e-3},
-        {"params": model.image_projection.parameters(), "lr": 1e-3},
-        {"params": model.text_encoder.parameters(), "lr": 5e-6},
-        {"params": model.image_encoder.parameters(), "lr": 1e-5},
-    ], weight_decay=0.01)
+        {"params": model.text_projection.parameters(), "lr": LR_PROJECTION},
+        {"params": model.image_projection.parameters(), "lr": LR_PROJECTION},
+        {"params": model.text_encoder.parameters(), "lr": LR_TEXT_ENCODER},
+        {"params": model.image_encoder.parameters(), "lr": LR_IMAGE_ENCODER},
+    ], weight_decay=WEIGHT_DECAY)
 
-    epochs = 50
-    total_steps = epochs * len(train_loader)
-    warmup_steps = int(0.05 * total_steps)
+    total_steps = EPOCHS * len(train_loader)
+    warmup_steps = int(WARMUP_FRACTION * total_steps)
 
     scheduler = get_cosine_schedule_with_warmup(
         optimizer,
@@ -138,10 +158,9 @@ def main():
     )
 
     best_r1 = 0.0
-    patience = 8
     no_improve = 0
 
-    for epoch in range(epochs):
+    for epoch in range(EPOCHS):
         train_metrics = train_one_epoch(
             model, train_loader, optimizer, device, scheduler
         )
@@ -152,43 +171,40 @@ def main():
         t2i_r1 = eval_results["metrics"]["t2i_r1_exact"]
         avg_r1 = (i2t_r1 + t2i_r1) / 2
 
-        print(
+        logging.info(
             f"Epoch {epoch+1} | "
             f"Loss: {train_metrics['train_loss']:.4f} | "
             f"I2T R@1: {i2t_r1:.4f} | "
             f"T2I R@1: {t2i_r1:.4f}"
         )
 
-        save_metrics(
-            eval_results["metrics"],
-            OUTPUT_DIR / f"metrics_epoch_{epoch+1}.json",
-        )
+        epoch_metrics = {**eval_results["metrics"], "train_loss": train_metrics["train_loss"]}
+        save_metrics(epoch_metrics, OUTPUT_DIR / f"metrics_epoch_{epoch+1}.json")
 
         if avg_r1 > best_r1:
             best_r1 = avg_r1
             no_improve = 0
             torch.save(model.state_dict(), CHECKPOINT_PATH)
-            print(f"  -> saved new best model (avg R@1={best_r1:.4f})")
+            logging.info(f"  -> saved new best model (avg R@1={best_r1:.4f})")
         else:
             no_improve += 1
-            print(f"  -> no improvement ({no_improve}/{patience})")
+            logging.info(f"  -> no improvement ({no_improve}/{PATIENCE})")
 
-        if no_improve >= patience:
-            print("Early stopping triggered")
+        if no_improve >= PATIENCE:
+            logging.info("Early stopping triggered")
             break
 
-    print(f"\nBest avg R@1: {best_r1:.4f}")
+    logging.info(f"\nBest avg R@1: {best_r1:.4f}")
 
-    # --- Final evaluation ---
+    # Final evaluation on best checkpoint
     checkpoint = torch.load(CHECKPOINT_PATH, map_location=device)
     model.load_state_dict(checkpoint)
     model.eval()
 
     final_results = evaluate_retrieval(model, val_loader, device, top_k=5)
-
     save_metrics(final_results["metrics"], OUTPUT_DIR / "final_metrics.json")
 
-    print("\nFinal evaluation complete.")
+    logging.info("Final evaluation complete.")
 
 
 if __name__ == "__main__":

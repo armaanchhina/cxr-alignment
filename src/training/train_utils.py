@@ -42,14 +42,12 @@ def finding_aware_contrastive_loss(
     logits = image_embeds @ text_embeds.T * scale
 
     findings = list(findings)
-    batch_size = len(findings)
     device = logits.device
 
-    positive_mask = torch.zeros((batch_size, batch_size), device=device, dtype=torch.float32)
-    for row_idx in range(batch_size):
-        for col_idx in range(batch_size):
-            if findings[row_idx] == findings[col_idx]:
-                positive_mask[row_idx, col_idx] = 1.0
+    # Map finding strings to integer ids, then build mask via broadcasting
+    finding_to_idx = {f: i for i, f in enumerate(set(findings))}
+    finding_ids = torch.tensor([finding_to_idx[f] for f in findings], device=device)
+    positive_mask = (finding_ids.unsqueeze(0) == finding_ids.unsqueeze(1)).float()
 
     log_probs_i2t = F.log_softmax(logits, dim=1)
     positives_per_row_i2t = positive_mask.sum(dim=1).clamp(min=1.0)

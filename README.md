@@ -37,6 +37,8 @@ You will be prompted for your password when downloading images.
 
 ## Download Images
 
+The download script uses `wget`. On Linux/Mac it is typically pre-installed. On Windows, install it via [Chocolatey](https://chocolatey.org/) (`choco install wget`) or use WSL.
+
 Before training, download the required chest X-ray images:
 
 ```bash
@@ -64,8 +66,11 @@ Outputs will be saved to:
 
 ```
 outputs/
-  best_model.pt
-  metrics_epoch_*.json
+  best_model.pt          # best checkpoint (by avg exact R@1)
+  config.json            # hyperparameters used for this run
+  train.log              # full training log (also printed to console)
+  metrics_epoch_*.json   # per-epoch retrieval metrics + train loss
+  final_metrics.json     # final retrieval metrics from best checkpoint
 ```
 
 > **Note:** Training was run overnight (~8–12 hours). GPU is strongly recommended; CPU training is not practical for the full dataset.
@@ -79,7 +84,7 @@ python eval.py
 ```
 
 This will:
-- Load the saved checkpoint from `outputs/checkpoints/best_model.pt`
+- Load the saved checkpoint from `outputs/best_model.pt`
 - Evaluate retrieval performance
 - Save final metrics to `outputs/results/final_metrics.json`
 
@@ -89,10 +94,10 @@ Evaluation on the full dataset using Recall@K:
 
 | Metric | @1 | @5 | @10 |
 |---|---|---|---|
-| Image → Text (exact) | 0.0058 | 0.0291 | 0.0552 |
-| Text → Image (exact) | 0.0145 | 0.0262 | 0.0523 |
-| Image → Text (finding) | 0.1512 | 0.2267 | 0.2791 |
-| Text → Image (finding) | 0.5494 | 0.6366 | 0.8110 |
+| Image → Text (exact) | 0.0174 | 0.0494 | 0.0901 |
+| Text → Image (exact) | 0.0145 | 0.0494 | 0.0727 |
+| Image → Text (finding) | 0.1802 | 0.2500 | 0.2733 |
+| Text → Image (finding) | 0.7209 | 0.8866 | 0.8866 |
 
 **Exact** recall measures retrieval of the specific paired report/image. **Finding** recall measures retrieval of any report/image sharing the same radiological finding — the primary metric given the finding-aware training objective. The strong finding-level recall (T2I R@10: 0.811) reflects that the model has learned clinically meaningful alignment even when exact retrieval is difficult.
 
@@ -104,9 +109,10 @@ Evaluation on the full dataset using Recall@K:
 ├── eval.py
 ├── src/
 │   ├── models/
-│   │   └── multimodal_cxr.py
+│   │   └── model.py
 │   ├── data/
-│   │   └── cxr_dataset.py
+│   │   ├── cxr_dataset.py
+│   │   └── io.py
 │   └── training/
 │       └── train_utils.py
 ├── scripts/

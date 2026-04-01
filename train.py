@@ -36,6 +36,7 @@ LR_TEXT_ENCODER = 5e-6
 LR_IMAGE_ENCODER = 1e-5
 RANDOM_STATE = 42
 VAL_SIZE = 0.2
+USE_FINDING_AWARE_LOSS = False
 
 
 def setup_logging(log_path: Path) -> None:
@@ -66,6 +67,7 @@ def save_config(path: Path) -> None:
         "lr_image_encoder": LR_IMAGE_ENCODER,
         "random_state": RANDOM_STATE,
         "val_size": VAL_SIZE,
+        "use_finding_aware_loss": USE_FINDING_AWARE_LOSS,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
@@ -162,7 +164,8 @@ def main():
 
     for epoch in range(EPOCHS):
         train_metrics = train_one_epoch(
-            model, train_loader, optimizer, device, scheduler
+            model, train_loader, optimizer, device, scheduler,
+            use_finding_aware_loss=USE_FINDING_AWARE_LOSS,
         )
 
         eval_results = evaluate_retrieval(model, val_loader, device)

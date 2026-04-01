@@ -70,7 +70,7 @@ def train_one_epoch(
     device: torch.device,
     scheduler=None,
     log_every: int = 50,
-    use_finding_aware_loss: bool = True,
+    use_finding_aware_loss: bool = False,
 ) -> Dict[str, float]:
     """
     Train the model for one epoch and return summary metrics.

@@ -42,7 +42,7 @@ def finding_aware_contrastive_loss(
     findings = list(findings)
     device = logits.device
 
-    # Map finding strings to integer ids, then build mask via broadcasting
+    # Map finding strings to integer ids, then build mask
     finding_to_idx = {f: i for i, f in enumerate(set(findings))}
     finding_ids = torch.tensor([finding_to_idx[f] for f in findings], device=device)
     positive_mask = (finding_ids.unsqueeze(0) == finding_ids.unsqueeze(1)).float()

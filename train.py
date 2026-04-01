@@ -47,6 +47,11 @@ def setup_logging(log_path: Path) -> None:
             logging.FileHandler(log_path),
         ],
     )
+    # makes log file more readble
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 
 def save_config(path: Path) -> None:
@@ -100,7 +105,7 @@ def get_transforms():
 def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
     setup_logging(LOG_PATH)
-    save_config(CONFIG_PATH)
+    save_config(CONFIG_PATH) # so user can see exactly what was used to train this model
 
     raw_data = load_data(DATA_PATH)
     samples = build_samples(raw_data, IMAGE_ROOT)
@@ -180,6 +185,8 @@ def main():
         )
 
         epoch_metrics = {**eval_results["metrics"], "train_loss": train_metrics["train_loss"]}
+        analysis = eval_results["i2t_analysis"]
+        save_metrics(analysis, OUTPUT_DIR / f"analysis_epoch_{epoch+1}.json")
         save_metrics(epoch_metrics, OUTPUT_DIR / f"metrics_epoch_{epoch+1}.json")
 
         if avg_r1 > best_r1:

@@ -58,9 +58,19 @@ python train.py
 
 This will:
 - Load paired image and report data
-- Train the multimodal model using finding-aware contrastive loss
+- Train the multimodal model using the configured contrastive loss
 - Save the best checkpoint
 - Log metrics per epoch
+
+**Switching loss function:**
+Open `train.py` and set the `USE_FINDING_AWARE_LOSS` constant near the top:
+
+```python
+USE_FINDING_AWARE_LOSS = True   # finding-aware multi-positive loss (default)
+USE_FINDING_AWARE_LOSS = False  # standard CLIP-style exact-pair loss
+```
+
+The selected loss is saved to `outputs/config.json` for reproducibility.
 
 Outputs will be saved to:
 
